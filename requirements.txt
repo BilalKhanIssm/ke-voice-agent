@@ -1,0 +1,10 @@
+python-dotenv==1.1.1
+python-socketio==5.14.1
+pydantic==2.11.1
+pydantic-settings==2.8.1
+livekit-agents==1.5.1
+livekit-plugins-openai==1.5.1
+livekit-plugins-deepgram==1.5.1
+livekit-plugins-silero==1.5.1
+pytest==8.3.5
+pytest-asyncio==0.25.3
