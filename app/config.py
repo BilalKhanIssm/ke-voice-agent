@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
     openrouter_llm_model: str = Field(default="x-ai/grok-3-mini-beta", alias="OPENROUTER_LLM_MODEL")
-    # Voice + tool calls need headroom; 80 often drops tool_calls after a short filler line.
+    # Voice replies with optional injected JSON need headroom vs very low caps.
     llm_max_completion_tokens: int = Field(default=512, alias="LLM_MAX_COMPLETION_TOKENS")
     llm_temperature: float = Field(default=0.05, alias="LLM_TEMPERATURE")
 

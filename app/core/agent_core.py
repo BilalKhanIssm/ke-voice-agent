@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from collections.abc import AsyncIterable
 from typing import Any, Callable, Literal
 
@@ -9,7 +11,7 @@ from livekit.agents import Agent, ModelSettings
 from livekit.agents import llm as lk_llm
 
 from app.core.knowledge_base import classify_intent, retrieve
-from app.tools.llm_tools import LlmTools
+from app.tools.llm_tools import build_outage_snapshot
 from app.core.transcript_utils import (
     normalize_digits,
     normalize_english_currency_for_tts,
@@ -19,46 +21,30 @@ from app.core.transcript_utils import (
 logger = logging.getLogger(__name__)
 MAX_CHAT_CONTEXT_MESSAGES = 8
 
-BASE_POLICY_PROMPT = """You are a professional, friendly male K-Electric (KE) call-centre voice agent for outage calls.
+BASE_POLICY_PROMPT = """You are a professional, friendly female K-Electric (KE) call-centre voice agent for K-Electric supply and outage calls.
 
-Sound human and clear; avoid generic “we are resolving it” only. Spoken style: short natural sentences, no bullet lists or numbered lists. After outage tool data: give a concise story (cause → who is affected → field work → realistic delays if any → what to expect next) in roughly 20–35 seconds of speech, not a long monologue.
+Sound human and clear; avoid generic “we are resolving it” only. Spoken style: short natural sentences, no bullet lists or numbered lists.
 
-Never invent feeder state, fault, crew, or ETA — call get_outage_status once you have an area or 13-digit account; if missing, ask once briefly.
+Conversation (not a form): acknowledge greetings and what the caller just said; show brief empathy when they describe loss of supply or stress. Let them explain the problem before you sound procedural. Do **not** open with an immediate demand for account number unless they jumped straight to “check my account”.
 
-When area/account is known: same assistant turn = one short thanks/ack line plus get_outage_status (never ack-only without the tool call — that causes dead air)."""
+Location for **feeder-level** facts: to narrate fault/crew/restoration from an injected outage snapshot you need **either** a clear neighbourhood / block / landmark **or** a 13-digit KE account — **one is enough, not both**. If they already named an area or gave an account earlier in this chat, **reuse it** and do **not** ask again. Ask at most **one** concise clarifying question if truly nothing usable has been said yet; never repeat the same ask twice in a row. If they complain that you repeated yourself, apologise once briefly and continue with what they already gave.
+
+When an “[Authoritative outage snapshot]” JSON block is in context for this turn: use **only** that JSON for feeder name, fault, crew, delays, ETA line, and `complaint_reference`. If they only asked for the complaint/reference number, read **only** that field from JSON first (digit-by-digit in Urdu per language rules), then at most one short helpful sentence — do not re-demand area/account. If there is **no** snapshot this turn, do **not** invent feeder/crew/reference numbers; stay conversational and generic, or ask one focused question.
+
+Complaint / reference numbers for text-to-speech: never output a bare compact digit string for a reference (e.g. 12345) where TTS may read it as a full number (“twelve thousand…”). English: digit-by-digit or clear short-code phrasing. Urdu: spoken Urdu or Roman Urdu digit-by-digit / words so the synthesiser (e.g. Uplift) does not misread the reference."""
 
 
 class VoiceAgent(Agent):
     def __init__(
         self,
-        tools: LlmTools,
         instructions: str,
         preferred_language: Literal["ur", "en"] | None,
         on_language_locked: Callable[[Literal["ur", "en"]], None] | None = None,
     ) -> None:
-        super().__init__(instructions=instructions, tools=[tools.get_outage_status])
+        super().__init__(instructions=instructions, tools=[])
         self.preferred_language = preferred_language
         self._language_locked = preferred_language in ("en", "ur")
         self._on_language_locked = on_language_locked
-
-    @staticmethod
-    def _chunk_has_tool_call(chunk: Any) -> bool:
-        if chunk is None:
-            return False
-        for attr in ("tool_calls", "function_calls"):
-            val = getattr(chunk, attr, None)
-            if isinstance(val, list) and val:
-                return True
-        delta = getattr(chunk, "delta", None)
-        if delta is not None:
-            for attr in ("tool_calls", "function_calls"):
-                val = getattr(delta, attr, None)
-                if isinstance(val, list) and val:
-                    return True
-        return False
-
-    def _filler_phrase(self) -> str:
-        return "جی، ایک لمحہ دیں، چیک کر رہا ہوں۔" if self.preferred_language == "ur" else "One moment, let me check that for you."
 
     def _detect_lang_from_event(self, item: Any) -> Literal["ur", "en"] | None:
         for attr in ("language", "detected_language", "language_code", "lang"):
@@ -120,13 +106,17 @@ class VoiceAgent(Agent):
 def build_system_prompt(preferred_language: Literal["ur", "en"] | None) -> str:
     if preferred_language == "ur":
         language_prompt = (
-            "LANGUAGE LOCK: Always respond ONLY in Urdu"
+            "LANGUAGE LOCK: Always respond ONLY in Urdu. "
             "Never reply in English words or phrases (no “okay”, “let me check”, “sure”) — use Urdu equivalents. "
             "Keep 13-digit K-Electric account numbers as digits when repeating them; speak times and ETAs in natural spoken Urdu/Roman Urdu. "
+            "For complaint or reference IDs from the outage snapshot, never write a bare multi-digit numeral like 12345 — say digits in Urdu/Roman Urdu so TTS (e.g. Uplift) does not read it as thousands. "
             "Avoid Hindi register; prefer Pakistani Urdu vocabulary."
         )
     elif preferred_language == "en":
-        language_prompt = "LANGUAGE LOCK: Always respond ONLY in English. Never reply in Urdu."
+        language_prompt = (
+            "LANGUAGE LOCK: Always respond ONLY in English. Never reply in Urdu. "
+            "For complaint or reference IDs, read digits clearly (e.g. digit-by-digit) so TTS does not merge them into one large number."
+        )
     else:
         language_prompt = (
             "Language policy: detect the caller language from first utterance, then respond only in that language "
@@ -135,28 +125,85 @@ def build_system_prompt(preferred_language: Literal["ur", "en"] | None) -> str:
     return f"{BASE_POLICY_PROMPT}\n{language_prompt}"
 
 
-def preprocess_chat_context(*, chat_ctx: lk_llm.ChatContext, preferred_language: Literal["ur", "en"] | None) -> lk_llm.ChatContext:
-    user_text = ""
+_AREA_HINTS_EN: frozenset[str] = frozenset(
+    ("block", "sector", "phase", "scheme", "society", "gul", "dha", "pechs", "korangi", "landhi", "clifton", "nazimabad")
+)
+_AREA_HINTS_UR: frozenset[str] = frozenset(("بلاک", "سیکٹر", "علاق", "محلہ", "مُحلّہ", "گل", "سائٹ", "جوہر"))
+
+
+def _user_item_text(item: Any) -> str:
+    raw = item.content if isinstance(item.content, str) else " ".join(str(x) for x in item.content)
+    return str(raw).strip()
+
+
+def _recent_user_messages(chat_ctx: lk_llm.ChatContext, *, max_messages: int = 6) -> tuple[str, list[str]]:
+    """Latest user text (normalized) plus recent user turns, newest first."""
+    texts: list[str] = []
     for item in reversed(chat_ctx.items):
         if getattr(item, "role", None) != "user":
             continue
-        content = item.content if isinstance(item.content, str) else " ".join(str(x) for x in item.content)
-        user_text = normalize_digits(content)
-        item.content = user_text
-        break
+        norm = normalize_digits(_user_item_text(item))
+        texts.append(norm)
+        if len(texts) >= max_messages:
+            break
+    if not texts:
+        return "", []
+    return texts[0], texts
+
+
+def _rich_enough_for_snapshot_lookup(text: str) -> bool:
+    if len(re.sub(r"\D", "", text)) >= 10:
+        return True
+    low = text.lower()
+    if any(h in low for h in _AREA_HINTS_EN):
+        return True
+    if any(h in text for h in _AREA_HINTS_UR):
+        return True
+    urdu_chars = sum(1 for c in text if "\u0600" <= c <= "\u06ff")
+    if urdu_chars >= 10 and len(text.split()) >= 4:
+        return True
+    return False
+
+
+def _snapshot_lookup_key(current_turn: str, recent_newest_first: list[str]) -> str:
+    if _rich_enough_for_snapshot_lookup(current_turn):
+        return current_turn
+    for past in recent_newest_first[1:]:
+        if _rich_enough_for_snapshot_lookup(past):
+            return past
+    return current_turn
+
+
+def preprocess_chat_context(*, chat_ctx: lk_llm.ChatContext, preferred_language: Literal["ur", "en"] | None) -> lk_llm.ChatContext:
+    user_text, recent_users = _recent_user_messages(chat_ctx)
     if not user_text:
         return chat_ctx
 
+    for item in reversed(chat_ctx.items):
+        if getattr(item, "role", None) != "user":
+            continue
+        item.content = user_text
+        break
+
     intent = classify_intent(user_text)
+    lookup = _snapshot_lookup_key(user_text, recent_users)
+    # Continue outage context when the caller follows up (e.g. reference / frustration) but the area was in an earlier turn.
+    inject_snapshot = intent in ("tool", "mixed") or (
+        intent == "rag"
+        and _rich_enough_for_snapshot_lookup(lookup)
+        and lookup.strip() != user_text.strip()
+    )
     injections: list[str] = []
     if intent in ("rag", "mixed"):
         retrieval_lang: Literal["en", "ur"] = preferred_language or "en"
         results = retrieve(user_text, language=retrieval_lang, top_k=1)
         if results:
             injections.append("[Relevant domain policy]\n" + "\n".join(f"• {r.content}" for r in results))
-    if intent in ("tool", "mixed"):
+    if inject_snapshot:
+        snap = build_outage_snapshot(lookup)
         injections.append(
-            "[Turn] Same turn: brief thanks + get_outage_status. After tool JSON: one concise spoken summary (cause, impact, crew, delays, next step); no bullets."
+            "[Authoritative outage snapshot for this user turn — summarise only these facts in speech; do not invent extra grid details.]\n"
+            + json.dumps(snap)
         )
     if not injections:
         return chat_ctx

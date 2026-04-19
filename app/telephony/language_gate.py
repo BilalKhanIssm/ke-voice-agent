@@ -19,7 +19,6 @@ from app.telephony.ivr import (
 )
 from app.shared.observability import log_marker
 from app.integrations.providers import apply_language_providers
-from app.tools.llm_tools import LlmTools
 
 
 def map_dtmf_to_language(user_input: str) -> Literal["en", "ur"] | None:
@@ -67,7 +66,6 @@ async def await_menu_digit(timeout_seconds: float) -> str | None:
 
 def make_voice_agent(settings: Settings, language: Literal["en", "ur"]) -> VoiceAgent:
     return VoiceAgent(
-        tools=LlmTools(),
         instructions=build_system_prompt(language),
         preferred_language=language,
         on_language_locked=None,

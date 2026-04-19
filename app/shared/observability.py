@@ -23,7 +23,7 @@ class _TurnBucket:
     stt_ms: int = 0
     llm_ms: int = 0
     tts_ms: int = 0
-    # One user end-of-utterance often spans multiple LLM completions (e.g. tool call + post-tool reply).
+    # One user end-of-utterance can span multiple LLM completions depending on pipeline behaviour.
     llm_request_count: int = 0
 
 

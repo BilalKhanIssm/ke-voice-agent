@@ -46,6 +46,15 @@ def _mock_outage_payload(area_or_account: str) -> dict[str, object]:
     }
 
 
+def build_outage_snapshot(area_or_account: str) -> dict[str, object]:
+    """Deterministic outage payload for demos and for prompt injection (same data as get_outage_status)."""
+    raw = (area_or_account or "").strip()
+    digits = _compact_digits(raw)
+    payload = _mock_outage_payload(raw if raw else digits)
+    payload["account_digits_received"] = bool(len(digits) >= 10)
+    return payload
+
+
 class LlmTools:
     @llm.function_tool(
         description=(
@@ -67,8 +76,4 @@ class LlmTools:
             ),
         ],
     ) -> str:
-        raw = (area_or_account or "").strip()
-        digits = _compact_digits(raw)
-        payload = _mock_outage_payload(raw if raw else digits)
-        payload["account_digits_received"] = bool(len(digits) >= 10)
-        return json.dumps(payload)
+        return json.dumps(build_outage_snapshot(area_or_account or ""))

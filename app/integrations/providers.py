@@ -18,14 +18,12 @@ def get_llm(settings: Settings) -> lk_openai.LLM:
             base_url=settings.openrouter_base_url,
             max_completion_tokens=settings.llm_max_completion_tokens,
             temperature=settings.llm_temperature,
-            parallel_tool_calls=False,
         )
     return lk_openai.LLM(
         model=settings.openai_llm_model,
         api_key=settings.openai_api_key,
         max_completion_tokens=settings.llm_max_completion_tokens,
         temperature=settings.llm_temperature,
-        parallel_tool_calls=False,
     )
 
 

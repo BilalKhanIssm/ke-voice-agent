@@ -12,7 +12,6 @@ from app.config import Settings
 from app.core.agent_core import VoiceAgent, build_system_prompt
 from app.telephony.language_gate import LanguageGateAgent
 from app.integrations.providers import get_llm, get_stt, get_tts
-from app.tools.llm_tools import LlmTools
 
 
 def _build_turn_handling_options() -> object | None:
@@ -40,7 +39,6 @@ def build_session(
 ) -> tuple[VoiceAgent, AgentSession]:
     """Voice agent with fixed language (tests or direct use)."""
     agent = VoiceAgent(
-        tools=LlmTools(),
         instructions=build_system_prompt(selected_language),
         preferred_language=selected_language,
         on_language_locked=None,

@@ -483,6 +483,17 @@ _MIXED_SIGNALS: frozenset[str] = frozenset({
     "load shedding area", "outage complaint", "bill not correct",
     "meter problem complaint", "faulty meter complaint",
     "complaint status", "complaint number", "complaint update",
+    "complaint ref", "reference number", "ref number", "ticket number",
+    "shikayat", "shikait",
+    # Urdu / Roman Urdu (substring match on normalized or raw text)
+    "ریفرنس",
+    "شکایت",
+    "کمپلین",
+    "لائٹ نہیں",
+    "بجلی نہیں",
+    "بجلی بند",
+    "کرنٹ نہیں",
+    "نہیں آرہی",
 })
  
 _TRIVIAL_SIGNALS: frozenset[str] = frozenset({
@@ -490,8 +501,29 @@ _TRIVIAL_SIGNALS: frozenset[str] = frozenset({
     "khuda hafiz", "thank you", "thanks", "shukriya", "ok ", " ok", "okay",
     "alright", "sure", "haan", "nahi", "theek", "bilkul",
 })
- 
- 
+
+
+def _greeting_only_heuristic(*, t: str, text: str, words: list[str]) -> bool:
+    """Salām / small-talk without a service request (Urdu or Roman Urdu)."""
+    if len(re.sub(r"\D", "", text)) >= 10:
+        return False
+    if any(sig in t for sig in _MIXED_SIGNALS) or any(sig in t for sig in _TOOL_SIGNALS):
+        return False
+    if len(words) > 14:
+        return False
+    tl = t.lower()
+    if any(s in tl for s in ("assalam", "salam", "aoa", "adaab")):
+        return True
+    if any(s in text for s in ("السلام", "سلام علیکم", "وعلیکم", "علیکم")):
+        return True
+    if len(words) <= 10 and (
+        any(s in text for s in ("کیا حال", "خیریت"))
+        or any(s in tl for s in ("kya hal", "kaise ho", "how are you"))
+    ):
+        return True
+    return False
+
+
 def classify_intent(
     text: str,
 ) -> Literal["tool", "rag", "mixed", "none"]:
@@ -513,13 +545,16 @@ def classify_intent(
         or any(sig in t for sig in _TRIVIAL_SIGNALS)
     ):
         return "none"
- 
+
     if any(sig in t for sig in _MIXED_SIGNALS):
         return "mixed"
  
     if any(sig in t for sig in _TOOL_SIGNALS):
         return "tool"
- 
+
+    if _greeting_only_heuristic(t=t, text=text, words=words):
+        return "none"
+
     return "rag"
  
  
