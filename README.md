@@ -17,6 +17,8 @@ Standalone LiveKit telephony worker with deterministic DTMF IVR language selecti
 - `LIVEKIT_API_SECRET`
 - `LIVEKIT_AGENT_NAME`
 - `DEEPGRAM_API_KEY`
+- `UPLIFTAI_API_KEY` (TTS for Urdu, and English when `CARTESIA_API_KEY` is unset)
+- `CARTESIA_API_KEY` (TTS for English when set)
 - `OPENAI_API_KEY` when `LLM_PROVIDER=openai`
 - `OPENROUTER_API_KEY` when `LLM_PROVIDER=openrouter`
 
@@ -69,6 +71,10 @@ docker compose up --build
 ```bash
 pytest -q
 ```
+
+## Turn latency logs
+
+`turn N complete: stt=… llm=… tts=…` comes from LiveKit metrics. For outage checks the model usually runs **twice** in one user turn (first completion issues the tool call, second speaks from tool JSON). When that happens the log includes `llm_requests=2` and `llm=` is the **sum** of both completions — not a single slow request.
 
 ## Observability markers
 

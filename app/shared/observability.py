@@ -23,6 +23,8 @@ class _TurnBucket:
     stt_ms: int = 0
     llm_ms: int = 0
     tts_ms: int = 0
+    # One user end-of-utterance often spans multiple LLM completions (e.g. tool call + post-tool reply).
+    llm_request_count: int = 0
 
 
 def attach_latency_logging(
@@ -47,7 +49,19 @@ def attach_latency_logging(
         seq = state["turn_seq"]
         stt, llm, tts = bucket.stt_ms, bucket.llm_ms, bucket.tts_ms
         total = stt + llm + tts
-        logger.info("turn %s complete: stt=%sms llm=%sms tts=%sms total=%sms", seq, stt, llm, tts, total)
+        n_llm = bucket.llm_request_count
+        if n_llm > 1:
+            logger.info(
+                "turn %s complete: stt=%sms llm=%sms (llm_requests=%s) tts=%sms total=%sms",
+                seq,
+                stt,
+                llm,
+                n_llm,
+                tts,
+                total,
+            )
+        else:
+            logger.info("turn %s complete: stt=%sms llm=%sms tts=%sms total=%sms", seq, stt, llm, tts, total)
 
     def _flush_pending() -> None:
         bucket = state.get("pending")
@@ -73,6 +87,7 @@ def attach_latency_logging(
             b = state["pending"]
             if b is not None:
                 b.llm_ms += int(round(m.duration * 1000))
+                b.llm_request_count += 1
         elif isinstance(m, TTSMetrics):
             b = state["pending"]
             if b is not None:

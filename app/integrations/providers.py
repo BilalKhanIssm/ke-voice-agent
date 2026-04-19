@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from livekit.plugins import deepgram, openai as lk_openai
+from livekit.plugins import cartesia, deepgram, openai as lk_openai, upliftai
 
 from app.config import Settings
 
@@ -18,12 +18,14 @@ def get_llm(settings: Settings) -> lk_openai.LLM:
             base_url=settings.openrouter_base_url,
             max_completion_tokens=settings.llm_max_completion_tokens,
             temperature=settings.llm_temperature,
+            parallel_tool_calls=False,
         )
     return lk_openai.LLM(
         model=settings.openai_llm_model,
         api_key=settings.openai_api_key,
         max_completion_tokens=settings.llm_max_completion_tokens,
         temperature=settings.llm_temperature,
+        parallel_tool_calls=False,
     )
 
 
@@ -47,26 +49,20 @@ def get_stt(settings: Settings, language: Literal["en", "ur"] | None) -> deepgra
 
 
 def get_tts(settings: Settings, language: Literal["en", "ur"] | None) -> object:
-    if language == "ur":
-        instructions = """
-        You are a K-Electric (Karachi) customer support agent.
-
-        Speak in clear Pakistani Urdu. Use a Karachi neutral accent.
-        Stay warm, calm, and professional.
-        """
-
-    else:
-        instructions = """
-        You are a professional customer support agent.
-
-        Speak clearly, confidently, and politely.
-        Maintain a neutral and helpful tone.
-        """
-    return lk_openai.TTS(
-        model=settings.openai_tts_model,
-        voice=settings.openai_tts_voice,
-        api_key=settings.openai_api_key,
-        instructions=instructions,
+    if language == "en" and settings.cartesia_api_key:
+        return cartesia.TTS(
+            api_key=settings.cartesia_api_key,
+            model=settings.cartesia_tts_model,
+            language="en",
+            voice=settings.cartesia_tts_voice_id_en,
+            sample_rate=settings.cartesia_tts_sample_rate,
+            encoding="pcm_s16le",
+            word_timestamps=False,
+        )
+    return upliftai.TTS(
+        api_key=settings.upliftai_api_key,
+        voice_id=settings.upliftai_voice_id,
+        output_format=settings.upliftai_output_format,
     )
 
 

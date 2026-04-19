@@ -5,15 +5,25 @@ import pytest
 
 
 def _set_min_env(monkeypatch):
+    monkeypatch.delenv("TEST_START_LANGUAGE", raising=False)
     monkeypatch.setenv("LIVEKIT_URL", "wss://example.livekit.cloud")
     monkeypatch.setenv("LIVEKIT_API_KEY", "abc")
     monkeypatch.setenv("LIVEKIT_API_SECRET", "def")
     monkeypatch.setenv("LIVEKIT_AGENT_NAME", "telephony-agent")
     monkeypatch.setenv("DEEPGRAM_API_KEY", "dg")
-    monkeypatch.setenv("OPENAI_TTS_MODEL", "tts-1")
-    monkeypatch.setenv("OPENAI_TTS_VOICE", "alloy")
+    monkeypatch.setenv("UPLIFTAI_API_KEY", "up")
     monkeypatch.setenv("LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "oa")
+
+
+def _reload_entrypoint_fresh(monkeypatch):
+    _set_min_env(monkeypatch)
+    import app.config as config_mod
+
+    config_mod.get_settings.cache_clear()
+    entrypoint_mod = importlib.import_module("app.telephony.entrypoint")
+    importlib.reload(entrypoint_mod)
+    return entrypoint_mod
 
 
 class DummySession:
@@ -32,9 +42,7 @@ class DummySession:
 
 @pytest.mark.asyncio
 async def test_session_starts_with_ivr_gate(monkeypatch):
-    _set_min_env(monkeypatch)
-    entrypoint_mod = importlib.import_module("app.telephony.entrypoint")
-    importlib.reload(entrypoint_mod)
+    entrypoint_mod = _reload_entrypoint_fresh(monkeypatch)
 
     session = DummySession()
 
@@ -53,9 +61,7 @@ async def test_session_starts_with_ivr_gate(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_build_ivr_session_invocation(monkeypatch):
-    _set_min_env(monkeypatch)
-    entrypoint_mod = importlib.import_module("app.telephony.entrypoint")
-    importlib.reload(entrypoint_mod)
+    entrypoint_mod = _reload_entrypoint_fresh(monkeypatch)
 
     session = DummySession()
     called = {"holder": None, "has_cb": False}

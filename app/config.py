@@ -27,14 +27,23 @@ class Settings(BaseSettings):
     llm_provider: Literal["openai", "openrouter"] = Field(default="openai", alias="LLM_PROVIDER")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
     openai_llm_model: str = Field(default="gpt-4o-mini", alias="OPENAI_LLM_MODEL")
-    openai_tts_model: str = Field(default="tts-1", alias="OPENAI_TTS_MODEL")
-    openai_tts_voice: str = Field(default="onyx", alias="OPENAI_TTS_VOICE")
     openrouter_api_key: str | None = Field(default=None, alias="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field(default="https://openrouter.ai/api/v1", alias="OPENROUTER_BASE_URL")
     openrouter_llm_model: str = Field(default="x-ai/grok-3-mini-beta", alias="OPENROUTER_LLM_MODEL")
     # Voice + tool calls need headroom; 80 often drops tool_calls after a short filler line.
     llm_max_completion_tokens: int = Field(default=512, alias="LLM_MAX_COMPLETION_TOKENS")
     llm_temperature: float = Field(default=0.05, alias="LLM_TEMPERATURE")
+
+    upliftai_api_key: str = Field(alias="UPLIFTAI_API_KEY")
+    upliftai_voice_id: str = Field(default="v_8eelc901", alias="UPLIFTAI_VOICE_ID")
+    upliftai_output_format: str = Field(default="MP3_22050_32", alias="UPLIFTAI_OUTPUT_FORMAT")
+    cartesia_api_key: str | None = Field(default=None, alias="CARTESIA_API_KEY")
+    cartesia_tts_model: str = Field(default="sonic-turbo", alias="CARTESIA_TTS_MODEL")
+    cartesia_tts_voice_id_en: str = Field(
+        default="f786b574-daa5-4673-aa0c-cbe3e8534c02",
+        alias="CARTESIA_TTS_VOICE_ID_EN",
+    )
+    cartesia_tts_sample_rate: int = Field(default=24000, alias="CARTESIA_TTS_SAMPLE_RATE")
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 

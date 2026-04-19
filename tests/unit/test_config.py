@@ -12,8 +12,7 @@ def _base_env():
         "LIVEKIT_API_SECRET": "def",
         "LIVEKIT_AGENT_NAME": "telephony-agent",
         "DEEPGRAM_API_KEY": "dg",
-        "OPENAI_TTS_MODEL": "tts-1",
-        "OPENAI_TTS_VOICE": "alloy",
+        "UPLIFTAI_API_KEY": "up",
     }
 
 
