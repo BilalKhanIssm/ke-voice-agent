@@ -35,6 +35,13 @@ def get_stt(settings: Settings, language: Literal["en", "ur"] | None) -> deepgra
     )
     # Multi-language detection is more stable with nova-2 than nova-3 in telephony.
     stt_model = "nova-2" if language is None else settings.deepgram_stt_model
+    if language == "ur":
+        endpointing_ms = 300
+    elif language == "en":
+        endpointing_ms = 150
+    else:
+        # Multi-language: bias toward Urdu telephony pauses.
+        endpointing_ms = 300
     return deepgram.STT(
         api_key=settings.deepgram_api_key,
         model=stt_model,
@@ -44,7 +51,7 @@ def get_stt(settings: Settings, language: Literal["en", "ur"] | None) -> deepgra
         smart_format=True,
         no_delay=True,
         filler_words=True,
-        endpointing_ms=70,
+        endpointing_ms=endpointing_ms,
     )
 
 

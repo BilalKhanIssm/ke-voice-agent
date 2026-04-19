@@ -7,17 +7,13 @@ from app.shared.observability import log_marker
 
 Lang = Literal["en", "ur"]
 
-PROMPT_1 = "Press one for English. Urdu key liey 2 dabain"
-PROMPT_RETRY = "Invalid input. Press one for English. Urdu key liey 2 dabain"
+PROMPT_1 = "Press one for English. اردو کے لیے 2 دبائیں."
+PROMPT_RETRY = "Invalid input. Press one for English. اردو کے لیے 2 دبائیں."
 PROMPT_END = "Sorry, we could not get your selection. Goodbye."
 
 
-GREETING_CONVERSATION_READY_EN = (
-    "Thank you. I'm ready to help you. How may I assist you today?"
-)
-GREETING_CONVERSATION_READY_UR = (
-    "شکریہ۔ میں آپ کی مدد کے لیے تیار ہوں۔ بتائیں، میں آپ کی کیسے مدد کر سکتا ہوں؟"
-)
+GREETING_CONVERSATION_READY_EN = "Assalamualaikum. How may I assist you today?"
+GREETING_CONVERSATION_READY_UR = "السلام علیکم۔ بتائیں، میں آپ کی کیسے مدد کر سکتی ہوں؟"
 
 
 @dataclass(frozen=True)

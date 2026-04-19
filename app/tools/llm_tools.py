@@ -6,6 +6,8 @@ from typing import Annotated
 from livekit.agents import llm
 from pydantic import Field
 
+from app.core.transcript_utils import format_ke_reference_spoken_en, format_ke_reference_spoken_urdu
+
 
 def _compact_digits(s: str) -> str:
     return re.sub(r"\D", "", s or "")
@@ -41,8 +43,25 @@ def _mock_outage_payload(area_or_account: str) -> dict[str, object]:
         ),
         "eta_summary": "Restoration is expected as soon as conditions and testing allow — often within a few hours, subject to field updates.",
         "complaint_reference": ref,
+        "complaint_reference_spoken_ur": format_ke_reference_spoken_urdu(ref),
+        "complaint_reference_spoken_en": format_ke_reference_spoken_en(ref),
         "complaint_already_logged": True,
         "priority_message": "The event is logged and being handled on priority; major updates are communicated when available.",
+    }
+
+
+def _mock_complaint_reference_payload(area_or_account: str) -> dict[str, object]:
+    """Standalone mock complaint reference for demos (same seed as outage mock for a given key)."""
+    raw = (area_or_account or "").strip()
+    key = raw.lower() if raw else "unknown"
+    h = int(hashlib.sha256(key.encode()).hexdigest()[:8], 16)
+    ref = f"KE-{h % 10_000_000_000:010d}"
+    return {
+        "mock": True,
+        "complaint_reference": ref,
+        "complaint_reference_spoken_ur": format_ke_reference_spoken_urdu(ref),
+        "complaint_reference_spoken_en": format_ke_reference_spoken_en(ref),
+        "note": "Demo-only reference; not connected to a live CRM.",
     }
 
 
@@ -50,8 +69,8 @@ class LlmTools:
     @llm.function_tool(
         description=(
             "Fetch current outage / feeder status for this caller. "
-            "Use after the customer shares their area (neighbourhood, block, or landmark) "
-            "or their 13-digit K-Electric account number. "
+            "Use when they give a neighbourhood with optional block/scheme (e.g. Gulistan-e-Johar block 18, جوہر بلاک 18) "
+            "or a 13-digit KE account. Neighbourhood+block is enough for outage/cause — do not require account only for that. "
             "Never invent live field status — always call this before stating feeder state, fault type, crew activity, or ETA."
         )
     )
@@ -61,8 +80,8 @@ class LlmTools:
             str,
             Field(
                 description=(
-                    "Area or location the customer gave, or their 13-digit KE account number "
-                    "(digits only or as spoken)."
+                    "Neighbourhood + block/landmark in the caller’s words, or 13-digit KE account digits only. "
+                    "Prefer the same Urdu/Roman phrase they used (e.g. جوہر بلاک 18). Do not merge broken digit groups."
                 )
             ),
         ],
@@ -72,3 +91,26 @@ class LlmTools:
         payload = _mock_outage_payload(raw if raw else digits)
         payload["account_digits_received"] = bool(len(digits) >= 10)
         return json.dumps(payload)
+
+    @llm.function_tool(
+        description=(
+            "Return a demo complaint / service reference number for this caller (mock data only). "
+            "Call when the customer asks for a complaint number, reference number, or 'شکایت نمبر' / 'ریفرنس نمبر'. "
+            "Pass the same area, block, landmark, or 13-digit account string you are using from the conversation. "
+            "In Urdu replies, read complaint_reference_spoken_ur verbatim when speaking the code; in English use "
+            "complaint_reference_spoken_en. Do not imply a live national CRM ticket unless integrated."
+        )
+    )
+    async def get_complaint_reference(
+        self,
+        area_or_account: Annotated[
+            str,
+            Field(
+                description=(
+                    "Area, block, scheme, landmark, or 13-digit KE account as given in the conversation "
+                    "(same key you would pass to get_outage_status)."
+                )
+            ),
+        ],
+    ) -> str:
+        return json.dumps(_mock_complaint_reference_payload(area_or_account))

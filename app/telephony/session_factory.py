@@ -50,7 +50,7 @@ def build_session(
         "stt": get_stt(settings, selected_language),
         "llm": get_llm(settings),
         "tts": get_tts(settings, selected_language),
-        "vad": silero.VAD.load(min_silence_duration=0.10, prefix_padding_duration=0.05),
+        "vad": silero.VAD.load(min_silence_duration=0.25, prefix_padding_duration=0.05),
         "preemptive_generation": True,
     }
     if turn_handling is not None:
@@ -76,7 +76,7 @@ def build_ivr_session(
         "stt": get_stt(settings, "en"),
         "llm": get_llm(settings),
         "tts": get_tts(settings, "ur"),
-        "vad": silero.VAD.load(min_silence_duration=0.10, prefix_padding_duration=0.05),
+        "vad": silero.VAD.load(min_silence_duration=0.25, prefix_padding_duration=0.05),
         "preemptive_generation": True,
     }
     if turn_handling is not None:

@@ -490,8 +490,51 @@ _TRIVIAL_SIGNALS: frozenset[str] = frozenset({
     "khuda hafiz", "thank you", "thanks", "shukriya", "ok ", " ok", "okay",
     "alright", "sure", "haan", "nahi", "theek", "bilkul",
 })
- 
- 
+
+# Goodbye / wrap-up: used to skip tool/RAG nudges and force a short sign-off.
+_STRONG_CLOSING_ROMAN: frozenset[str] = frozenset({
+    "allah hafiz",
+    "khuda hafiz",
+    "goodbye",
+    "good bye",
+    "bye bye",
+    "alvida",
+    "fi amanillah",
+    "fee aman",
+})
+_AR_CLOSING_PHRASES: tuple[str, ...] = (
+    "اللہ حافظ",
+    "خدا حافظ",
+    "الوداع",
+    "فی امان اللہ",
+)
+
+
+def is_closing_utterance(text: str) -> bool:
+    """
+    True when the caller is clearly ending the call (goodbye / thanks on hang-up).
+
+    Kept conservative: strong goodbye phrases, or short thanks tied to leaving/call.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    for phrase in _AR_CLOSING_PHRASES:
+        if phrase in raw:
+            return len(raw.split()) <= 20
+    t = normalize_query_for_retrieval(text)
+    low = t.lower()
+    if any(p in low for p in _STRONG_CLOSING_ROMAN):
+        return len(low.split()) <= 20
+    words = low.split()
+    if len(words) <= 4 and low.strip() in {"bye", "goodbye", "khuda hafiz", "allah hafiz", "alvida"}:
+        return True
+    if len(words) <= 8 and any(x in low for x in ("thank you", "thanks", "shukriya", "شکری")):
+        if any(x in low for x in ("call", "calle", "bye", "allah", "khuda", "goodbye", "کال")):
+            return True
+    return False
+
+
 def classify_intent(
     text: str,
 ) -> Literal["tool", "rag", "mixed", "none"]:
