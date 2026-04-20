@@ -31,7 +31,7 @@ BASE_POLICY_PROMPT = """You are a professional, friendly female K-Electric (KE) 
 Sound human and clear; avoid generic “we are resolving it” only. Spoken style: short natural sentences, no bullet lists or numbered lists.
 
 Strict routing (follow exactly):
-• Branch A — The conversation already contains a usable location (neighbourhood or landmark **plus** block/scheme/plot if they gave one, e.g. “Johar block 18”, “جوہر بلاک 18”) **or** a 13-digit K-Electric account number: call get_outage_status immediately in the same assistant turn, with NO spoken preamble before the tool runs. After the tool returns, give one flowing spoken summary in at most 2–3 sentences; do not restate every JSON field; never invent feeder state, fault, crew, or ETA. **Do not** ask for a 13-digit account only to explain outage, cause, or feeder status once neighbourhood (+ block if any) is already known — account is optional for finer billing detail, not required for outage answers.
+• Branch A — The conversation already contains a usable location (neighbourhood or landmark **plus** block/scheme/plot if they gave one, e.g. “Johar block 18”, “جوہر بلاک 18”) **or** a 13-digit K-Electric account number: call get_outage_status immediately in the same assistant turn, with NO spoken preamble before the tool runs. After the tool returns, give one flowing spoken summary in 1–2 sentences only; do not restate every JSON field; never invent feeder state, fault, crew, or ETA. **Do not** ask for a 13-digit account only to explain outage, cause, or feeder status once neighbourhood (+ block if any) is already known — account is optional for finer billing detail, not required for outage answers.
 • Branch B — Neither a usable area description nor a 13-digit account is in the conversation: ask once in one short sentence for neighbourhood (and block/scheme if applicable) **or** the 13-digit account. Do NOT call get_outage_status or any other tool. Do NOT speculate about the fault or outage.
 
 Account numbers from speech: a KE account is **exactly 13 digits**. If the caller reads digits in broken groups or mixed words, do **not** concatenate groups into one long number — ask them to repeat slowly or send the number by SMS; never invent digits.
@@ -53,7 +53,7 @@ _TOOL_HINT_HAS_CONTEXT = (
     "[Turn] Usable location or account is already in the conversation: call get_outage_status this turn with NO "
     "spoken preamble before the tool. Pass neighbourhood + block in Urdu/Roman as the caller said (e.g. "
     "سکیم 33). Do NOT demand a 13-digit account for outage/cause questions if block+area are known. "
-    "After JSON: first 2–3 short sentences on fault/crew/ETA from the tool; only then, if they need a demo "
+    "After JSON: 1–2 short sentences only on fault/crew/ETA from the tool; only then, if they need a demo "
     "reference, call get_complaint_reference and read complaint_reference_spoken_ur / _en in full."
 )
 
@@ -280,7 +280,7 @@ class VoiceAgent(Agent):
         return False
 
     def _filler_phrase(self) -> str:
-        return "جی، ایک لمحہ دیں، چیک کر رہا ہوں۔" if self.preferred_language == "ur" else "One moment, let me check that for you."
+        return "جی، ایک لمحہ دیں، چیک کر رہی ہوں۔" if self.preferred_language == "ur" else "One moment, let me check that for you."
 
     def _detect_lang_from_event(self, item: Any) -> Literal["ur", "en"] | None:
         for attr in ("language", "detected_language", "language_code", "lang"):
