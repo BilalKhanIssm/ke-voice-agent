@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import re
 from collections.abc import AsyncIterable
 from typing import Any, Callable, Literal
@@ -24,55 +25,50 @@ from app.core.transcript_utils import (
 )
 
 logger = logging.getLogger(__name__)
-MAX_CHAT_CONTEXT_MESSAGES = 8
+MAX_CHAT_CONTEXT_MESSAGES = 12
 
-BASE_POLICY_PROMPT = """You are a professional, friendly female K-Electric (KE) call-centre voice agent for outage calls.
+BASE_POLICY_PROMPT = """I am a friendly female K-Electric (KE) call-centre voice agent for outage calls.
 
-Sound human and clear; avoid generic “we are resolving it” only. Spoken style: short natural sentences, no bullet lists or numbered lists.
+I should sound like a real person: short natural spoken sentences, no bullet points, no stiff policy language.
 
-Strict routing (follow exactly):
-• Branch A — The conversation already contains a usable location (neighbourhood or landmark **plus** block/scheme/plot if they gave one, e.g. “Johar block 18”, “جوہر بلاک 18”) **or** a 13-digit K-Electric account number: call get_outage_status immediately in the same assistant turn, with NO spoken preamble before the tool runs. After the tool returns, give one flowing spoken summary in 1–2 sentences only; do not restate every JSON field; never invent feeder state, fault, crew, or ETA. **Do not** ask for a 13-digit account only to explain outage, cause, or feeder status once neighbourhood (+ block if any) is already known — account is optional for finer billing detail, not required for outage answers.
-• Branch B — Neither a usable area description nor a 13-digit account is in the conversation: ask once in one short sentence for neighbourhood (and block/scheme if applicable) **or** the 13-digit account. Do NOT call get_outage_status or any other tool. Do NOT speculate about the fault or outage.
+Routing rules:
+• If the caller has already shared a usable location (area plus block/scheme/plot if they gave one, like "Johar block 18" / "جوہر بلاک 18") or a 13-digit KE account number, I should check get_outage_status in the same turn. A very short natural acknowledgment is okay when needed, then I should run the tool and explain the result in 1-2 plain sentences. I must not invent fault, crew, feeder, ETA, or restoration details.
+• If the caller has not shared a usable area or a 13-digit account number yet, I should ask once in one short sentence for area (and block/scheme if applicable) or the 13-digit account number. I must not call outage tools or speculate before I have that context.
 
-Account numbers from speech: a KE account is **exactly 13 digits**. If the caller reads digits in broken groups or mixed words, do **not** concatenate groups into one long number — ask them to repeat slowly or send the number by SMS; never invent digits.
+KE account handling: KE account numbers are exactly 13 digits. If digits are unclear, broken, or mixed in speech, I should ask them to repeat slowly. I must never invent digits or stitch uncertain chunks into a fake number.
 
-If you have already asked for the area or account number and the caller still has not provided it, do NOT ask again. Briefly say you can check once they share their area or 13-digit account number, and wait.
+If I already asked for area/account and they still did not provide it, I should not keep repeating the same question. I should briefly say I can check as soon as they share area or account.
 
-Mock complaint reference (demo only): call get_complaint_reference with the same area or account string you use for outage lookup. **Speak the entire complaint_reference_spoken_ur (or _en) verbatim in one go** — all digit words, no truncation. Do not invent a different code. The same area/account key yields a consistent demo reference.
+Demo complaint reference: if needed, call get_complaint_reference with the same area/account key used for outage lookup. Speak complaint_reference_spoken_ur or complaint_reference_spoken_en exactly as returned, without truncation or invented changes.
 
-**Outage story before reference:** Whenever area (or account) is known and the caller cares about no supply, cause, timeline, complaint, or a reference number, you must **first** call get_outage_status (again if needed for this area) and briefly explain fault_summary, crew_status, and eta_summary so they hear what is wrong and that field work is under way. **Only after that outage summary**, if they need a demo reference, call get_complaint_reference and read the spoken reference. The only exception is if they ask **only** for the digits of a reference with no outage question — still prefer one quick get_outage_status pass first when area is known so the answer stays consistent.
+Outage first, reference second: when the caller asks why power is out, when it will return, or asks for complaint/reference context, I should check get_outage_status first, explain fault_summary + crew_status + eta_summary briefly, then give demo reference if they still ask.
 
-Never say you cannot give reason or restoration guidance if get_outage_status JSON includes fault_summary, crew_status, or eta_summary — paraphrase those fields briefly instead of refusing.
+If tool output includes outage reason or ETA fields, I should share them clearly instead of refusing. I must never claim a complaint was registered/closed unless tool output explicitly supports it, and I must never invent a reference number.
 
-Never claim a complaint was registered, logged, or closed unless get_outage_status JSON explicitly supports it or you have just called get_complaint_reference for a demo reference. Never invent a reference number; only read values returned by tools.
-
-When the caller clearly says goodbye or thanks and is ending the call, reply once with a short polite closing (thank them, optional helpline 118). Do not ask for area, account, or reference again."""
+If the caller is ending the call, I should reply once with a natural short goodbye. Do not restart data collection at that point."""
 
 
 _TOOL_HINT_HAS_CONTEXT = (
-    "[Turn] Usable location or account is already in the conversation: call get_outage_status this turn with NO "
-    "spoken preamble before the tool. Pass neighbourhood + block in Urdu/Roman as the caller said (e.g. "
-    "سکیم 33). Do NOT demand a 13-digit account for outage/cause questions if block+area are known. "
-    "After JSON: 1–2 short sentences only on fault/crew/ETA from the tool; only then, if they need a demo "
-    "reference, call get_complaint_reference and read complaint_reference_spoken_ur / _en in full."
+    "[Check] Area/account already known. Give a very short acknowledgment if needed, then call get_outage_status now. "
+    "Use the same locality wording the caller gave. Do not demand a 13-digit account if area+block are already enough "
+    "for outage context. After tool JSON, explain fault/crew/ETA naturally in 1-2 sentences. If they still need a demo "
+    "reference, call get_complaint_reference and read complaint_reference_spoken_ur/_en fully."
 )
 
 _TOOL_HINT_OUTAGE_BEFORE_REFERENCE = (
-    "[Turn] Caller is asking why power is off, when it may return, and/or a reference: call get_outage_status "
-    "this turn (same area string) before get_complaint_reference. Summarise fault_summary, crew_status, and "
-    "eta_summary for reassurance first; then read the spoken reference verbatim if still needed."
+    "[Check] Caller wants outage reason/timeline and/or a reference. Call get_outage_status first for this area/account, "
+    "then summarise fault_summary + crew_status + eta_summary briefly. Only after that, if needed, call "
+    "get_complaint_reference and read the spoken reference verbatim."
 )
 
 _TOOL_HINT_NEED_LOCATION = (
-    "[Turn] Area or account is NOT in the conversation yet: ask for the caller's area or 13-digit "
-    "K-Electric account number in one short sentence. Do NOT call get_outage_status or any other tool; "
-    "do not speculate about the fault."
+    "[Check] Area/account missing. Ask once in one short sentence for area (plus block/scheme if applicable) or "
+    "the 13-digit KE account number. Do not call tools yet and do not speculate."
 )
 
 _CLOSING_TURN_HINT = (
-    "[Turn] Caller is ending the call (goodbye or thanks). Reply once in one or two short sentences: "
-    "thank them, optional helpline 118, wish them well. Do NOT ask for area, account, or reference; "
-    "do NOT call get_outage_status, get_complaint_reference, or any other tool."
+    "[Check] Caller is wrapping up. Match their tone and end naturally in one or two short sentences. "
+    "Do not ask for area/account/reference again and do not call any tools."
 )
 
 # Karachi / KE telephony: common localities (normalized lowercase) plus Roman Urdu variants.
@@ -257,11 +253,14 @@ class VoiceAgent(Agent):
         instructions: str,
         preferred_language: Literal["ur", "en"] | None,
         on_language_locked: Callable[[Literal["ur", "en"]], None] | None = None,
+        rng: random.Random | None = None,
     ) -> None:
         super().__init__(instructions=instructions, tools=[tools.get_outage_status, tools.get_complaint_reference])
         self.preferred_language = preferred_language
         self._language_locked = preferred_language in ("en", "ur")
         self._on_language_locked = on_language_locked
+        self._rng = rng or random.Random()
+        self._last_filler_phrase: str | None = None
 
     @staticmethod
     def _chunk_has_tool_call(chunk: Any) -> bool:
@@ -280,7 +279,26 @@ class VoiceAgent(Agent):
         return False
 
     def _filler_phrase(self) -> str:
-        return "جی، ایک لمحہ دیں، چیک کر رہی ہوں۔" if self.preferred_language == "ur" else "One moment, let me check that for you."
+        ur_fillers = (
+            "جی، ذرا ایک سیکنڈ دیں۔",
+            "جی، چیک کر رہی ہوں۔",
+            "ایک لمحہ، دیکھتی ہوں۔",
+            "ہاں، ابھی چیک کرتی ہوں۔",
+            "جی، ابھی دیکھ کر بتاتی ہوں۔",
+        )
+        en_fillers = (
+            "One moment, let me check that.",
+            "Sure, just a second.",
+            "Let me look that up for you.",
+            "Bear with me one moment.",
+            "Okay, checking that now.",
+        )
+        pool = list(ur_fillers if self.preferred_language == "ur" else en_fillers)
+        if self._last_filler_phrase and len(pool) > 1 and self._last_filler_phrase in pool:
+            pool = [p for p in pool if p != self._last_filler_phrase]
+        selected = self._rng.choice(pool)
+        self._last_filler_phrase = selected
+        return selected
 
     def _detect_lang_from_event(self, item: Any) -> Literal["ur", "en"] | None:
         for attr in ("language", "detected_language", "language_code", "lang"):
@@ -359,7 +377,7 @@ class VoiceAgent(Agent):
 def build_system_prompt(preferred_language: Literal["ur", "en"] | None) -> str:
     if preferred_language == "ur":
         language_prompt = (
-            "LANGUAGE LOCK: Always respond ONLY in Urdu"
+            "LANGUAGE LOCK: Always respond ONLY in Urdu. "
             "Never reply in English words or phrases (no “okay”, “let me check”, “sure”) — use Urdu equivalents. "
             "Keep 13-digit K-Electric account numbers as digits when repeating them, except mock complaint codes: "
             "use complaint_reference_spoken_ur from tools verbatim for those. Speak times and ETAs in natural spoken Urdu/Roman Urdu. "
@@ -440,7 +458,17 @@ async def trim_chat_context(agent: VoiceAgent) -> None:
         billable = [m for m in non_system_items if _is_trim_billable_message(m)]
         if len(billable) <= MAX_CHAT_CONTEXT_MESSAGES:
             return
-        # Keep only tail section with the latest budgeted billable messages.
+        # Preserve earliest location/account evidence, then keep latest budgeted tail.
+        preserved_user_context = next(
+            (
+                msg
+                for msg in non_system_items
+                if getattr(msg, "role", None) == "user"
+                and _conversation_has_area_or_account(lk_llm.ChatContext(items=[msg]))
+            ),
+            None,
+        )
+
         kept = []
         seen = 0
         for msg in reversed(non_system_items):
@@ -449,7 +477,10 @@ async def trim_chat_context(agent: VoiceAgent) -> None:
                 seen += 1
             if seen >= MAX_CHAT_CONTEXT_MESSAGES:
                 break
-        chat_ctx_copy.items = [*system_items, *reversed(kept)]
+        kept_items = list(reversed(kept))
+        if preserved_user_context is not None and preserved_user_context not in kept_items:
+            kept_items.insert(0, preserved_user_context)
+        chat_ctx_copy.items = [*system_items, *kept_items]
         await agent.update_chat_ctx(chat_ctx_copy)
     except Exception:
         logger.warning("chat context trimming skipped", exc_info=True)
