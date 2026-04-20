@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.core.agent_core import VoiceAgent, trim_chat_context
 from app.shared.observability import attach_latency_logging, log_marker
 from app.telephony.ivr import GREETING_CONVERSATION_READY_EN, GREETING_CONVERSATION_READY_UR
+from app.telephony.llm_warmup import warmup_llm_if_enabled
 from app.telephony.session_factory import build_ivr_session, build_session
 
 settings = get_settings()
@@ -53,6 +54,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
             agent, session = build_session(settings, forced_language)
             voice_agent_holder["agent"] = agent
             attach_latency_logging(session, trim_when_voice_agent_ready, current_phase)
+            await warmup_llm_if_enabled(settings, session)
             await session.start(room=ctx.room, agent=agent)
             greeting = GREETING_CONVERSATION_READY_EN if forced_language == "en" else GREETING_CONVERSATION_READY_UR
             session.say(greeting, add_to_chat_ctx=False, allow_interruptions=True)
@@ -65,6 +67,7 @@ async def entrypoint(ctx: agents.JobContext) -> None:
 
         agent, session = build_ivr_session(settings, voice_agent_holder, on_ivr_failed)
         attach_latency_logging(session, trim_when_voice_agent_ready, current_phase)
+        await warmup_llm_if_enabled(settings, session)
         await session.start(room=ctx.room, agent=agent)
         log_marker("session.started", room=ctx.room.name, phase="ivr")
     finally:

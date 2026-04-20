@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Voice + tool calls + full Urdu digit-by-digit reference readout need headroom.
     llm_max_completion_tokens: int = Field(default=448, alias="LLM_MAX_COMPLETION_TOKENS")
     llm_temperature: float = Field(default=0.05, alias="LLM_TEMPERATURE")
+    llm_warmup_enabled: bool = Field(default=True, alias="LLM_WARMUP_ENABLED")
+    llm_warmup_timeout_seconds: float = Field(default=8.0, alias="LLM_WARMUP_TIMEOUT_SECONDS")
 
     upliftai_api_key: str = Field(alias="UPLIFTAI_API_KEY")
     upliftai_voice_id: str = Field(default="v_8eelc901", alias="UPLIFTAI_VOICE_ID")
