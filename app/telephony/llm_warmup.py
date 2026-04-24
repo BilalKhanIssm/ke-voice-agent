@@ -7,6 +7,7 @@ from livekit.agents import llm as lk_llm
 from livekit.agents.types import APIConnectOptions
 
 from app.shared.observability import log_marker
+from app.tools.llm_tools import LlmTools
 
 if TYPE_CHECKING:
     from livekit.agents import AgentSession
@@ -18,10 +19,15 @@ logger = logging.getLogger(__name__)
 _WARM_SYSTEM = (
     "Connection warmup only. Reply with exactly one character: 0. No other text, no punctuation."
 )
+_warmup_tools = LlmTools()
+_WARMUP_TOOLS = [
+    _warmup_tools.get_outage_status,
+    _warmup_tools.get_complaint_reference,
+]
 
 
 async def warmup_llm_if_enabled(settings: "Settings", session: "AgentSession") -> None:
-    """Prime the configured chat LLM before the first user turn (TLS/connection pool + provider cold start)."""
+    """Prime chat LLM/network path before first user turn."""
     if not settings.llm_warmup_enabled:
         return
 
@@ -35,24 +41,19 @@ async def warmup_llm_if_enabled(settings: "Settings", session: "AgentSession") -
         log_marker("llm.warmup.skip", reason="no_chat_method")
         return
 
-    try:
-        llm.prewarm()
-    except Exception:
-        pass
-
     ctx = lk_llm.ChatContext()
     ctx.items = [
         lk_llm.ChatMessage(role="system", content=[_WARM_SYSTEM]),
         lk_llm.ChatMessage(role="user", content=["ping"]),
     ]
-    conn = APIConnectOptions(max_retry=1, retry_interval=0.5, timeout=settings.llm_warmup_timeout_seconds)
+    conn = APIConnectOptions(max_retry=0, timeout=settings.llm_warmup_timeout_seconds)
 
     try:
-        stream = llm.chat(chat_ctx=ctx, tools=None, conn_options=conn)
+        stream = llm.chat(chat_ctx=ctx, tools=_WARMUP_TOOLS, conn_options=conn)
         async with stream:
             async for _ in stream:
                 break
-        log_marker("llm.warmup.ok")
+        log_marker("llm.warmup.ok", mode="chat_with_tools")
     except Exception as exc:
         logger.warning("llm warmup failed (call continues): %s", exc)
         log_marker("llm.warmup.failed", error=str(exc))
